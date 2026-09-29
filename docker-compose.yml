@@ -1,0 +1,31 @@
+# Base de datos para desarrollo local
+#
+# En produccion se usa Neon (Postgres serverless), con la misma variable
+# DATABASE_URL. Solo cambia el valor de la conexion, no el codigo.
+#
+# Levantar:  docker compose up -d
+# Ver logs:   docker compose logs -f
+# Bajar:      docker compose down
+# Bajar con volumen (borra los datos):  docker compose down -v
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: auth-service-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auth_service
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auth_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

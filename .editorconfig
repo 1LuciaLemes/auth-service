@@ -1,0 +1,13 @@
+# Editores
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+logs/

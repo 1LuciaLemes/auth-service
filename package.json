@@ -1,0 +1,27 @@
+{
+  "name": "auth-service-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servicio de autenticacion reusable tipo OAuth2 / OpenID Connect, hecho desde cero",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspace=@auth/service",
+    "dev:client": "npm run dev --workspace=@auth/client",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "db:generate": "npm run db:generate --workspace=@auth/service",
+    "db:migrate": "npm run db:migrate --workspace=@auth/service",
+    "db:studio": "npm run db:studio --workspace=@auth/service"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
