@@ -46,8 +46,19 @@ export interface DependenciasAuth {
   /**
    * Genera el token de verificacion de email. Se inyecta para que el test
    * pueda poner un valor conocido y no depender de la aleatoriedad.
+   *
+   * Devuelve LAS DOS MITADES a proposito, y no solo una:
+   *
+   *   - `token`: el valor en claro. Va SOLO al email y se descarta.
+   *   - `tokenHash`: SHA-256. Va SOLO a la base.
+   *
+   * Si esta interfaz devolviera un unico campo, el error natural seria
+   * persistirlo y mandarlo a los dos lados, o mandarlo a los dos, y cualquiera
+   * de las dos cosas rompe el sistema en silencio. Ver explicacion.md, seccion 32.
    */
-  generarTokenDeVerificacion: (userId: string) => Promise<{ tokenHash: string; expira: Date }>
+  generarTokenDeVerificacion: (
+    userId: string,
+  ) => Promise<{ token: string; tokenHash: string; expira: Date }>
   /**
    * Envia el email. Se inyecta por la misma razon, y tambien para que el
    * registro funcione en tests sin llamar a Resend de verdad.
@@ -117,13 +128,35 @@ export async function registrarUsuario(
     // Carrera entre dos registros simultaneos con el mismo email: los dos
     // pasan el buscarPorEmail y uno gana el INSERT. El UNIQUE de la base lo
     // rechaza, y sin este catch el usuario veria un 500 en vez de un 409.
+    //
+    // Lo que se NECESITA es distinguir esa violacion de un fallo real. En un
+    // `catch` que convierte cualquier error en 500, un corte de red tambien
+    // devolvia 'Ya existe una cuenta con ese email', que es un diagnostico
+    // falso: el usuario reintenta, el email sigue libre, y el error se repite
+    // hasta que creye que el problema es suyo.
+    if (esViolacionDeUnicidad(error)) {
+      await deps.auditoria.registrar({
+        tipo: 'registro_rechazado_email_duplicado',
+        ...contexto,
+      })
+      throw errorDeConflicto('Ya existe una cuenta con ese email')
+    }
+
+    // Cualquier otro error es nuestro, no del usuario: 500 generico.
     throw errorInterno('No se pudo crear la cuenta', {
       causa: error instanceof Error ? error.message : 'desconocida',
     })
   }
 
   const verificacion = await deps.generarTokenDeVerificacion(creado.id)
-  await deps.enviarEmailDeVerificacion({ email: creado.email, token: verificacion.tokenHash })
+
+  // OJO, aqui hay una distincion que no se puede invertir: al email va el
+  // `token` EN CLARO y a la base ya fue el `tokenHash`. Mandar el hash
+  // (que fue lo que hacia este modulo) produce un enlace de verificacion
+  // inservible: el usuario lo abre, el endpoint hashea el hash que recibe y
+  // busca ese hash en la base, donde esta el hash DEL HASH, y nunca coincide.
+  // El bug es invisible porque el registro devuelve 201 y el email sale bien.
+  await deps.enviarEmailDeVerificacion({ email: creado.email, token: verificacion.token })
 
   await deps.auditoria.registrar({
     tipo: 'registro_exitoso',
@@ -136,6 +169,34 @@ export async function registrarUsuario(
   // asi el dia de mañana cambiar `id` por `user_id` en el schema no obliga a
   // tocar el contrato de la API.
   return { userId: creado.id, email: creado.email }
+}
+
+/**
+ * Detecta una violacion de la restriccion UNIQUE de PostgreSQL.
+ *
+ * PostgreSQL reporta el conflicto con el codigo '23505' (unique_violation), y
+ * el nombre de la constraint en `constraint`. Se mira el codigo y no el texto
+ * del mensaje: el mensaje esta en ingles, cambia entre versiones y lo cambia
+ * el traductor si alguien pone la base en otro idioma. Comparar textos para
+ * decidir el status HTTP es la forma habitual de que un endpoint devuelva 500
+ * cuando deberia devolver 409, solo en unos pocos casos, y solo en produccion.
+ */
+function esViolacionDeUnicidad(error: unknown): boolean {
+  // `unknown` y no `Error`: el catch de TypeScript entrega cualquier cosa, y
+  // presuponer que es un Error obliga a hacer un cast que es mentira.
+  if (typeof error !== 'object' || error === null) return false
+
+  // Se mira `code` porque es el campo estable del driver `pg` para el
+  // SQLSTATE de la base.
+  const codigo = (error as { code?: unknown }).code
+  if (codigo === '23505') return true
+
+  // Fallback por nombre de constraint. Se acepta `email` porque es la
+  // constraint de `users`, que es la unica que puede saltar en este INSERT.
+  // Aceptar CUALQUIER 23505 a secas seria un error: la misma clase de error
+  // aparece por otros motivos que no significan 'email duplicado'.
+  const constraint = (error as { constraint?: unknown }).constraint
+  return typeof constraint === 'string' && constraint.includes('email')
 }
 
 /**
