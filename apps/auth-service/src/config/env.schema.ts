@@ -4,7 +4,7 @@
  * Por que este archivo existe (explicacion.md, seccion 31):
  *
  * Las variables de entorno son strings. Nada garantiza que el valor sea
- * correcto, y el error aparece en produccion a las 3 de la mañana. TypeScript
+ * correcto, y el error aparece en produccion a las 3 de la manana. TypeScript
  * no ayuda aca: los tipos se borran al compilar, y `process.env.PORT` siempre
  * es `string | undefined`.
  *
@@ -54,6 +54,23 @@ export const EnvSchema = z
     // ---------------------------------------------------------
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(3000),
+
+    /**
+     * Nivel de detalle del log.
+     *
+     *   silent  = no loguea nada. Es el default en tests, para que la salida
+     *             de los tests no se mezcle con los logs del service.
+     *   error   = solo errores.
+     *   warn    = errores y advertencias. Lo minimo razonable en produccion.
+     *   info    = el nivel normal de produccion.
+     *   debug   = detalle para desarrollo.
+     *
+     * No se ofrece `trace` porque en un auth service casi no hay trazas que
+     * valgan el costo de generarlas, y el nivel se elige mal con facilidad.
+     */
+    LOG_LEVEL: z
+      .enum(['silent', 'error', 'warn', 'info', 'debug'])
+      .optional(),
 
     /**
      * URL publica del service. Es exactamente el mismo valor que el issuer
