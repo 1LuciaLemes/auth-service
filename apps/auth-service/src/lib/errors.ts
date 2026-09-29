@@ -99,9 +99,20 @@ export function errorDeValidacion(
  * `invalid_credentials` tanto si el email no existe, como si la contrasena esta
  * mal, como si la cuenta esta bloqueada. Distinguirlos convertiria el endpoint
  * en un enumerador de cuentas registradas. Ver explicacion.md, seccion 23.
+ *
+ * OJO TAMBIEN CON QUE EL TEXTO VIVA EN UNA SOLA CONSTANTE. El mensaje por
+ * defecto tiene que ser EXACTAMENTE el mismo que devuelve
+ * `mensajeDeCredencialesInvalidas` cuando no quedan intentos. No es un detalle
+ * cosmetico: un test de este servicio encontro que una de las dos ramas
+ * terminaba el mensaje con punto y la otra no, y esa diferencia de un solo
+ * caracter es un oraculo de enumeracion perfecto. Un atacante compara
+ * strings, no interpretations.
  */
+export const MENSAJE_CREDENCIALES_INVALIDAS = 'Credenciales invalidas.'
+
+/** 401, credenciales invalidas. Ver `MENSAJE_CREDENCIALES_INVALIDAS`. */
 export function errorDeCredenciales(
-  mensaje = 'Credenciales invalidas',
+  mensaje: string = MENSAJE_CREDENCIALES_INVALIDAS,
 ): AppError {
   return new AppError('invalid_credentials', mensaje, 401)
 }
