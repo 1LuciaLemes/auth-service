@@ -177,6 +177,7 @@ describe('servicio de autenticacion', () => {
       auditoria: base.auditoria,
       politica: POLITICA,
       generarTokenDeVerificacion: async () => ({
+        token: 'token-en-claro-que-va-al-email',
         tokenHash: 'hash-de-token-falso',
         expira: new Date('2026-09-30T12:00:00.000Z'),
       }),
@@ -563,14 +564,125 @@ describe('servicio de autenticacion', () => {
     })
   })
 
-  describe('el email de verificacion va hasheado, no en claro', () => {
-    it('lo que se pasa al servicio de email es un hash', async () => {
-      // El repositorio de one_time_tokens guarda el SHA-256. El token en claro
-      // solo existe en el link del email. Si se guardara en claro, un atacante
-      // con acceso de lectura a la base podria verificar cualquier email.
+  describe('el token de verificacion: la base y el email reciben cosas distintas', () => {
+    // Este bloque, antes, afirmaba que lo que se mandaba al email era el
+    // HASH, y el test pasaba. Documentaba el bug en vez de detectarlo: con el
+    // hash en el enlace, el usuario lo abre, el endpoint hashea lo que recibe y
+    // busca en la base, donde esta el hash DEL HASH. Nunca coincide, y el
+    // enlace no verifica nada.
+    //
+    // El fallo era invisible porque el registro devolvia 201 y el email salia
+    // con normalidad. Nadie se enteraba hasta que alguien reportaba que su
+    // enlace de verificacion no funciona.
+    it('manda al email el token EN CLARO, no el hash', async () => {
       await registrarUsuario(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA })
 
-      expect(emailsEnviados[0].token).toBe('hash-de-token-falso')
+      // Es lo unico que sirve: es lo que el usuario va a usar para verificar.
+      expect(emailsEnviados[0].token).toBe('token-en-claro-que-va-al-email')
+    })
+
+    it('el hash NUNCA sale en el email', async () => {
+      await registrarUsuario(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA })
+
+      // La otra mitad de la regla: a la base va el hash, y el hash no viaja.
+      // Un enlace de verificacion es publico en cuanto se reenvia o se lee en
+      // un movil compartido.
+      expect(emailsEnviados[0].token).not.toBe('hash-de-token-falso')
+    })
+
+    it('el token del email no es derivable del hash que se guarda', async () => {
+      await registrarUsuario(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA })
+
+      // Las dos mitades tienen que ser realmente distintas y no calcularse una
+      // de la otra de forma reversible.
+      expect(emailsEnviados[0].token).not.toContain('hash-de-token-falso')
+    })
+  })
+
+  describe('carrera de dos registros con el mismo email', () => {
+    it('devuelve 409, no 500, cuando el UNIQUE revienta en el INSERT', async () => {
+      // Los dos registros pasan el buscarPorEmail antes de que ninguno inserte.
+      // El UNIQUE de la base rechaza al segundo, y eso es un 409, no un fallo
+      // del servidor.
+      //
+      // Con el codigo anterior, cualquier error del crear se traducía a 500.
+      // El usuario reintentaba tres veces, recibia 500 las tres, y la cuenta se
+      // quedaba a medias sin ninguna pista de por que.
+      const depsEnConflicto: DependenciasAuth = {
+        ...deps,
+        usuarios: {
+          ...base.usuarios,
+          crear: async () => {
+            const error = new Error('duplicate key value violates unique constraint')
+            Object.assign(error, { code: '23505', constraint: 'users_email_unique' })
+            throw error
+          },
+        },
+      }
+
+      await expect(
+        registrarUsuario(depsEnConflicto, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA }),
+      ).rejects.toMatchObject({ statusCode: 409, code: 'conflict' })
+    })
+
+    it('lo registra en auditoria como email duplicado, no como error interno', async () => {
+      const depsEnConflicto: DependenciasAuth = {
+        ...deps,
+        usuarios: {
+          ...base.usuarios,
+          crear: async () => {
+            const error = new Error('duplicate key value')
+            Object.assign(error, { code: '23505' })
+            throw error
+          },
+        },
+      }
+
+      await registrarUsuario(depsEnConflicto, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA }).catch(
+        () => undefined,
+      )
+
+      // El evento importa: un intento duplicado es informacion de seguridad
+      // (puede ser alguien registrando cuentas ajenas), mientras que un 500 es
+      // ruido de infraestructura.
+      expect(base.eventos.some((e) => e.tipo === 'registro_rechazado_email_duplicado')).toBe(true)
+    })
+
+    it('un fallo que NO es de unicidad sigue siendo 500', async () => {
+      // El riesgo de afinar la deteccion es tragarse errores de verdad. Un corte
+      // de red o la base caida tienen que seguir siendo 500, porque un 409
+      // diria al usuario que su email ya esta en uso, que es un diagnostico
+      // falso y lo dejaria probando contrasenas al azar.
+      const depsCaido: DependenciasAuth = {
+        ...deps,
+        usuarios: {
+          ...base.usuarios,
+          crear: async () => {
+            throw Object.assign(new Error('ECONNREFUSED'), { code: 'ECONNREFUSED' })
+          },
+        },
+      }
+
+      await expect(
+        registrarUsuario(depsCaido, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA }),
+      ).rejects.toMatchObject({ statusCode: 500, code: 'server_error' })
+    })
+
+    it('detecta el conflicto por el nombre de la constraint si no hay code', async () => {
+      // Alguns adaptadores (y algunos mocks) solo exponen `constraint`.
+      const depsSinCode: DependenciasAuth = {
+        ...deps,
+        usuarios: {
+          ...base.usuarios,
+          crear: async () => {
+            throw Object.assign(new Error('duplicate key'), { constraint: 'users_email_key' })
+          },
+        },
+      }
+
+      await expect(
+        registrarUsuario(depsSinCode, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA }),
+      ).rejects.toMatchObject({ statusCode: 409 })
     })
   })
 })
