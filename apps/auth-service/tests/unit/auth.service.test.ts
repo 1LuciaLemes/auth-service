@@ -24,11 +24,13 @@ import {
   type DependenciasAuth,
 } from '../../src/modules/auth/auth.service.js'
 import type {
+  EstadoCuenta,
   RepositorioAuditoria,
   RepositorioUsuarios,
   ResultadoBusqueda,
 } from '../../src/modules/auth/ports.js'
 import { type EstadoBloqueo } from '../../src/modules/auth/lockout.js'
+import { hashearContrasena } from '../../src/lib/password.js'
 
 const AHORA = new Date('2026-09-29T12:00:00.000Z')
 
@@ -59,6 +61,8 @@ interface UsuarioFalso {
   emailVerifiedAt: Date | null
   role: 'user' | 'admin'
   estado: EstadoBloqueo
+  /** Estado de la cuenta. Distinto de `estado`, que es el bloqueo temporal. */
+  status: EstadoCuenta
 }
 
 /** Implementa el puerto de usuarios en memoria. */
@@ -81,6 +85,11 @@ function crearBaseFalsa(): BaseFalsa & {
         emailVerifiedAt: usuario.emailVerifiedAt,
         role: usuario.role,
         estado: { ...usuario.estado },
+        // Sin esto el repositorio devuelve `undefined` y el login rechaza
+        // ANTES de verificar la contrasena, que es como cinco tests de
+        // bloqueo dejaron de registrar intentos sin que el error Dijera nada
+        // util: el mensaje era el generico de siempre.
+        status: usuario.status,
       }
     },
 
@@ -95,6 +104,7 @@ function crearBaseFalsa(): BaseFalsa & {
           emailVerifiedAt: usuario.emailVerifiedAt,
           role: usuario.role,
           estado: { ...usuario.estado },
+          status: usuario.status,
         }
       }
       return null
@@ -137,7 +147,11 @@ function crearBaseFalsa(): BaseFalsa & {
 
   const auditoria: RepositorioAuditoria = {
     async registrar(evento) {
-      datos.eventos.push({ tipo: evento.tipo, userId: evento.userId })
+      // Se copia el evento entero, metadata incluida. Antes solo se guardaban
+      // tipo y userId, y por eso los tests que comprueban que un dato sensible
+      // va al audit log y NO al cliente fallaban con undefined sin que el
+      // servicio tuviera nada que ver: el fake se comia el campo.
+      datos.eventos.push({ ...evento })
     },
   }
 
@@ -149,7 +163,7 @@ function agregarUsuario(
   base: BaseFalsa,
   email: string,
   passwordHash: string | null,
-  extras: Partial<{ emailVerifiedAt: Date; estado: EstadoBloqueo }> = {},
+  extras: Partial<{ emailVerifiedAt: Date; estado: EstadoBloqueo; status: EstadoCuenta }> = {},
 ): UsuarioFalso {
   const usuario: UsuarioFalso = {
     id: `usr_${base.filas.size + 1}`,
@@ -158,6 +172,7 @@ function agregarUsuario(
     emailVerifiedAt: extras.emailVerifiedAt ?? null,
     role: 'user',
     estado: extras.estado ?? { intentosFallidos: 0, bloqueadaHasta: null },
+    status: extras.status ?? 'active',
   }
   base.filas.set(email, usuario)
   return usuario
@@ -350,6 +365,87 @@ describe('servicio de autenticacion', () => {
 
       const serializado = JSON.stringify(base.eventos)
       expect(serializado).not.toContain('existe@ejemplo.com')
+    })
+  })
+
+  describe('login: una cuenta dada de baja no entra', () => {
+    // El schema declara 'disabled' desde el principio, pero el login no lo
+    // miraba. Con el bloqueo por intentos vencido (que se resuelve solo al pasar
+    // la hora), una cuenta dada de baja podia iniciar sesion con normalidad.
+    //
+    // Todos los tests de este bloque usan un hash REAL, no 'hash-cualquiera'.
+    // La comprobacion de status va DESPUES de verificar la contrasena, y
+    // verificar un hash falso falla siempre: con un hash de mentira estos tests
+    // se pasarian probando el camino de contrasena incorrecta, y el de 'cuenta
+    // activa entra' fallaria sin que hubiera relacion con lo que prueba.
+    const CONTRASENA_REAL = 'ContrasenaBuena1!'
+
+    /** Agrega un usuario con un hash argon2 de verdad para CONTRASENA_REAL. */
+    async function agregarUsuarioConHashReal(
+      email: string,
+      status: EstadoCuenta,
+    ): Promise<void> {
+      agregarUsuario(base, email, await hashearContrasena(CONTRASENA_REAL), { status })
+    }
+
+    for (const status of ['locked', 'disabled'] as const) {
+      it(`rechaza una cuenta con status ${status}`, async () => {
+        await agregarUsuarioConHashReal('u@ejemplo.com', status)
+
+        await expect(
+          iniciarSesion(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_REAL }, AHORA),
+        ).rejects.toMatchObject({ statusCode: 401 })
+      })
+    }
+
+    it('el mensaje es el generico, no "tu cuenta esta deshabilitada"', async () => {
+      await agregarUsuarioConHashReal('u@ejemplo.com', 'disabled')
+
+      let mensaje = ''
+      try {
+        await iniciarSesion(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_REAL }, AHORA)
+      } catch (error) {
+        mensaje = (error as Error).message
+      }
+
+      // Decirlo confirmaria que el email existe Y que esta dado de baja, que
+      // es mas informacion que un simple "credenciales invalidas".
+      expect(mensaje).toBe(MENSAJE_CREDENCIALES_INVALIDAS)
+    })
+
+    it('una contrasena CORRECTA tampoco deja entrar a una cuenta dada de baja', async () => {
+      await agregarUsuarioConHashReal('u@ejemplo.com', 'disabled')
+
+      // Este es el caso que importa. Que la contrasena sea correcta no puede
+      // saltarse una baja: si el status solo se comprobara en el camino del
+      // fallo, bastaria con conocer la contrasena de una cuenta deshabilitada
+      // para entrar.
+      await expect(
+        iniciarSesion(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_REAL }, AHORA),
+      ).rejects.toMatchObject({ statusCode: 401 })
+    })
+
+    it('el status va al audit log, que lo lee un admin', async () => {
+      await agregarUsuarioConHashReal('u@ejemplo.com', 'disabled')
+
+      await iniciarSesion(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_REAL }, AHORA).catch(
+        () => undefined,
+      )
+
+      const evento = base.eventos.find((e) => e.tipo === 'login_cuenta_no_activa')
+      expect(evento).toBeDefined()
+      // El status es informacion de gestion, y va al log. Nunca al cliente.
+      expect(evento?.metadata?.status).toBe('disabled')
+    })
+
+    it('una cuenta activa normal entra sin problema', async () => {
+      // El caso contrario, para que los tests anteriores no se puedan hacer
+      // pasar rechazando siempre.
+      await agregarUsuarioConHashReal('u@ejemplo.com', 'active')
+
+      await expect(
+        iniciarSesion(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_REAL }, AHORA),
+      ).resolves.toMatchObject({ userId: expect.any(String) })
     })
   })
 

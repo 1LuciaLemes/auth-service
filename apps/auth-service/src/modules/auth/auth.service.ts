@@ -253,7 +253,7 @@ export async function iniciarSesion(
     throw errorDeCredenciales()
   }
 
-  // --- PASO 3: usuario sin contrasena (solo Google) ----------------------
+  // --- PASO 4: usuario sin contrasena (solo Google) ----------------------
   //
   // Sin este chequeo, `verificar` recibiria null. Y un null no falla: o lo
   // revienta, o peor, si el codigo lo trata como "no coincide" el usuario
@@ -269,8 +269,20 @@ export async function iniciarSesion(
     throw errorDeCredenciales()
   }
 
-  // --- PASO 4: verificar -------------------------------------------------
-  const contrasenaCorrecta = await verificarContrasena(datos.contrasena, usuario.passwordHash)
+  // --- PASO 5: verificar -------------------------------------------------
+  //
+  // OJO CON EL ORDEN DE LOS ARGUMENTOS: `verificarContrasena` recibe
+  // (hashGuardado, contrasena). Este calledo estaba al reves, y el efecto era
+  // silencioso: `verify` recibia la contrasena en el sitio del hash, fallaba,
+  // y el catch de password.ts devolvia false. O sea, que NINGUN usuario podia
+  // iniciar sesion con su contrasena correcta, y el endpoint respondia
+  // 'credenciales invalidas' como si hubiera escrito mal.
+  //
+  // Los 30 tests de login no lo detectaron porque usaban un hash de mentira
+  // ('hash-cualquiera'), que falla en los dos ordenes. Un test que pasa por el
+  // motivo equivocado es peor que un test que no existe, porque aparenta
+  // cubrir algo. El fix incluye tests con un hash argon2 de verdad.
+  const contrasenaCorrecta = await verificarContrasena(usuario.passwordHash, datos.contrasena)
 
   if (!contrasenaCorrecta) {
     const nuevoEstado = registrarIntentoFallido(usuario.estado, deps.politica, ahora)
@@ -297,6 +309,36 @@ export async function iniciarSesion(
     const restantes = decisionPosterior.permitido ? decisionPosterior.intentosRestantes : 0
 
     throw errorDeCredenciales(mensajeDeCredencialesInvalidas(restantes))
+  }
+
+  // --- PASO 6: cuenta no activa ------------------------------------------
+  //
+  // `status` NO es lo mismo que `estado`. `estado` es el bloqueo temporal por
+  // fuerza bruta, que se resuelve solo cuando pasa la hora; `status` es
+  // 'disabled', una baja que un admin tiene que levantar a mano.
+  //
+  // Con el schema declarando 'disabled' desde el principio y el login sin
+  // mirarlo, una cuenta dada de baja podia entrar sin problema en cuanto su
+  // bloqueo por intentos se vencía. El bloqueo temporal se resuelve solo; una
+  // baja no, y por eso hacía falta un campo aparte.
+  //
+  // LA POSICION ES LO IMPORTANTE, y está DESPUES de verificar la contrasena, no
+  // antes. Si se comprobara antes, argon2 no se ejecutaría y el rechazo sería
+  // instantáneo, mientras que una contrasena incorrecta tarda ~100 ms: con esa
+  // diferencia de tiempo un atacante enumeraría de un vistazo qué emails están
+  // deshabilitados. Así, argon2 se ejecuta siempre, el mensaje es el genérico de
+  // siempre, y el status solo llega al audit log.
+  if (usuario.status !== 'active') {
+    await deps.auditoria.registrar({
+      tipo: 'login_cuenta_no_activa',
+      userId: usuario.id,
+      // El status es información de gestión y va al log, que lo lee un admin.
+      // Nunca al cliente.
+      metadata: { status: usuario.status },
+      ...contexto,
+    })
+
+    throw errorDeCredenciales()
   }
 
   // --- Exito --------------------------------------------------------------

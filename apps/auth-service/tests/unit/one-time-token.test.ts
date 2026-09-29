@@ -13,14 +13,14 @@ import {
   decidirCanje,
   generarTokenDeUnSoloUso,
   hashearToken,
-  hashesCoinciden,
+  compararEnTiempoConstante,
   ttlDeProposito,
   type TokenAlmacenado,
 } from '../../src/modules/users/one-time-token.js'
 
 const AHORA = new Date('2030-01-01T12:00:00.000Z')
 
-/** Construye una fila válida de one_time_tokens. */
+/** Construye una fila valida de one_time_tokens. */
 function fila(overrides: Partial<TokenAlmacenado> = {}): TokenAlmacenado {
   return {
     userId: 'usr_1',
@@ -49,7 +49,15 @@ describe('one-time tokens', () => {
       // Si el hash no fuera determinista, la fila guardada nunca coincidiria
       // con el token que llega por email y el canje fallaria siempre.
       expect(emitido.tokenHash).toBe(hashearToken(emitido.token))
-      expect(emitido.tokenHash).toHaveLength(64)
+      // SHA-256 son 32 bytes. En base64url son 43 caracteres, y en hexadecimal
+      // 64. Este test afirmaba 64, que es la codificacion que NO usa el
+      // proyecto: la de crypto.ts es base64url, porque es la que se puede
+      // meter en una URL y en un header sin tener que escapar caracteres.
+      // El fallo no rompia nada, porque el hash es opaco y su formato no
+      // importa, pero un test que afirma algo falso sobre la propia
+      // implementacion es la forma de que la afirmacion se copie a otro sitio
+      // y ahi sí sea un bug.
+      expect(emitido.tokenHash).toHaveLength(43)
     })
 
     it('el hash NO permite recuperar el token', () => {
@@ -93,11 +101,11 @@ describe('one-time tokens', () => {
     it('acepta el mismo hash', () => {
       const token = generarTokenDeUnSoloUso('password_reset', AHORA).token
 
-      expect(hashesCoinciden(hashearToken(token), hashearToken(token))).toBe(true)
+      expect(compararEnTiempoConstante(hashearToken(token), hashearToken(token))).toBe(true)
     })
 
     it('rechaza hashes distintos', () => {
-      expect(hashesCoinciden(hashearToken('token-a'), hashearToken('token-b'))).toBe(false)
+      expect(compararEnTiempoConstante(hashearToken('token-a'), hashearToken('token-b'))).toBe(false)
     })
 
     it('rechaza longitudes distintas sin lanzar', () => {
@@ -105,8 +113,8 @@ describe('one-time tokens', () => {
       // error inesperado en la validacion de un token es una vulnerabilidad:
       // el endpoint responderia 500 y revelaria que el token "existe pero es
       // raro", en vez de 401 generico.
-      expect(hashesCoinciden('corto', 'mucho_mas_largo_de_todo')).toBe(false)
-      expect(hashesCoinciden('', 'algo')).toBe(false)
+      expect(compararEnTiempoConstante('corto', 'mucho_mas_largo_de_todo')).toBe(false)
+      expect(compararEnTiempoConstante('', 'algo')).toBe(false)
     })
   })
 
