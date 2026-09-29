@@ -20,9 +20,11 @@
  * Ver explicacion.md, secciones 32 y 36.
  */
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { generarToken, hashearToken, compararEnTiempoConstante } from '../../lib/crypto.js'
 
-/** Para que se usa el token. Un token de un tipo NUNCA sirve para el otro. */
+/**
+ * Para que se usa el token. Un token de un tipo NUNCA sirve para el otro.
+ */
 export type PropositoToken = 'email_verification' | 'password_reset'
 
 /**
@@ -79,8 +81,12 @@ export function generarTokenDeUnSoloUso(proposito: PropositoToken, ahora = new D
   //
   // OJO: NO se usa Math.random, ni uuid, ni un contador. Math.random no es
   // criptografico y se puede predecir; un contador es adivinable por definicion.
-  // randomBytes es el unico aceptable.
-  const token = randomBytes(32).toString('base64url')
+  //
+  // La generacion la hace `crypto.ts`, que es donde ya vivia. Este modulo no
+  // reimplementa las primitivas: dos implementaciones de hashear o de generar
+  // tokens en el mismo repositorio divergen con el tiempo, y cuando divergen
+  // el fallo aparece como un token que a veces no se puede canjear.
+  const token = generarToken(32)
 
   return {
     token,
@@ -90,30 +96,14 @@ export function generarTokenDeUnSoloUso(proposito: PropositoToken, ahora = new D
   }
 }
 
-/** SHA-256 en hexadecimal. Determinista: el mismo token da el mismo hash. */
-export function hashearToken(token: string): string {
-  return createHash('sha256').update(token, 'utf8').digest('hex')
-}
-
 /**
- * Compara dos hashes en tiempo CONSTANTE.
- *
- * Un `===` sobre cadenas devuelve false en cuanto encuentra el primer caracter
- * distinto, y el tiempo que tarda depende de cuantos caracteres coincidieron.
- * Medir eso permite reconstruir un hash caracter a caracter. `timingSafeEqual`
- * compara siempre entero, coincida o no.
+ * Reexportadas para que los llamantes tengan un unico sitio del que importar
+ * las piezas de este dominio, sin obligar a conocer la estructura interna de
+ * `crypto.ts`. Son las MISMAS funciones, no copias: mantener dos
+ * implementaciones de un hash en el mismo repositorio es la forma segura de que
+ * dejen de coincidir.
  */
-export function hashesCoinciden(a: string, b: string): boolean {
-  // Se comparan como Buffers de la MISMA longitud. `timingSafeEqual` lanza
-  // si los tamanios difieren, y ese `length` es informacion que un atacante
-  // tambien podria usar, asi que se compara tambien la longitud antes.
-  const bufferA = Buffer.from(a, 'utf8')
-  const bufferB = Buffer.from(b, 'utf8')
-
-  if (bufferA.length !== bufferB.length) return false
-
-  return timingSafeEqual(bufferA, bufferB)
-}
+export { hashearToken, compararEnTiempoConstante }
 
 /** Por que no se pudo canjear un token. Sirve para el audit log. */
 export type MotivoTokenInvalido =
