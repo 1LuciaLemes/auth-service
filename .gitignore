@@ -17,6 +17,11 @@ out/
 !.env.example
 
 # Documentacion personal de estudio (privada, no se sube)
+# Las dos grafias a proposito: la entrada original era "explication.md" con c,
+# que no es la palabra en espanol, y no la que los comentarios del codigo
+# nombran. Con una sola de las dos, el archivo con la otra grafia quedaba
+# fuera del ignore y se subia al repo publico con un `git add -A`.
+explicacion.md
 explication.md
 
 # Datos de pruebas y cobertura
