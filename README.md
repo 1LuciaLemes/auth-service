@@ -124,6 +124,3 @@ cd apps/auth-service
 
 - Los secretos van en `.env`, que esta en `.gitignore`. En el repo solo esta
   `.env.example`, con los nombres y valores de ejemplo.
-- La documentacion de estudio que acompana al proyecto es personal y no forma
-  parte del repositorio, asi que las referencias a `explicacion.md` en los
-  comentarios apuntan a un archivo que no veras aqui.

@@ -1,12 +1,4 @@
-/**
- * Tests del servicio de reset de contrasena.
- *
- * Lo que mas importa aqui es comprobar lo que NO se puede ver en una prueba
- * manual: que el endpoint de solicitud no revele si un email existe, y que un
- * token no se pueda canjear dos veces.
- *
- * Ver explicacion.md, seccion 36.
- */
+
 
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -26,7 +18,7 @@ import type {
 
 const CONTRASENA_VALIDA = 'EstaEsLaContrasenaDelUsuario1!'
 
-/** Fila en memoria de one_time_tokens. */
+
 interface FilaToken {
   userId: string
   purpose: string
@@ -103,8 +95,8 @@ function crearBase(tokensIniciales: FilaToken[] = []) {
 
   const repoTokens: RepositorioOneTimeTokens = {
     guardar: async ({ userId, purpose, tokenHash, expiresAt }) => {
-      // Se invalidan los previos del mismo usuario y proposito, que es lo que
-      // hace que el ultimo email sea el unico valido.
+
+
       for (const [clave, fila] of filas) {
         if (fila.userId === userId && fila.purpose === purpose && fila.usedAt === null) {
           filas.delete(clave)
@@ -146,7 +138,7 @@ beforeEach(async () => {
   }
 })
 
-/** Registra un usuario activo para tener algo contra lo que pedir un reset. */
+
 async function crearUsuario(email = 'lucia@ejemplo.com') {
   return base.repoUsuarios.crear({ email, passwordHash: 'hash-original', displayName: 'Lucia' })
 }
@@ -159,8 +151,8 @@ describe('solicitarResetDeContrasena', () => {
     expect(base.emails).toHaveLength(1)
     const [{ token }] = base.emails
 
-    // Lo que viaja por el email es el token en claro, y lo que se guarda es su
-    // hash. Mandar el hash produce un enlace que no verifica nada.
+
+
     const fila = [...base.filas.values()][0]
     expect(token).not.toBe(fila.tokenHash)
     expect(fila.tokenHash).toBe(hashearToken(token))
@@ -173,7 +165,7 @@ describe('solicitarResetDeContrasena', () => {
     const fila = [...base.filas.values()][0]
     const minutos = (fila.expiresAt.getTime() - Date.now()) / 60_000
 
-    // 15, no 24 horas: el token de reset es el mas sensible de los dos.
+
     expect(minutos).toBeGreaterThan(14)
     expect(minutos).toBeLessThanOrEqual(15)
   })
@@ -182,9 +174,9 @@ describe('solicitarResetDeContrasena', () => {
     await crearUsuario('lucia@ejemplo.com')
     await solicitarResetDeContrasena(deps, { email: 'LUCIA@Ejemplo.COM' })
 
-    // Si no se normalizara, un usuario que escribe su email con mayusculas
-    // receberia el mensaje generico sin ningun email, y pensaria que el
-    // sistema esta roto.
+
+
+
     expect(base.emails).toHaveLength(1)
   })
 
@@ -192,15 +184,15 @@ describe('solicitarResetDeContrasena', () => {
     const resultado = await solicitarResetDeContrasena(deps, { email: 'nadie@ejemplo.com' })
 
     expect(base.emails).toHaveLength(0)
-    // Y el retorno es undefined, igual que en el caso favorable. Un endpoint
-    // que devolviera algo distinto seria un enumerador de cuentas.
+
+
     expect(resultado).toBeUndefined()
   })
 
   it('el mismo mensaje para email existente y para inexistente', async () => {
-    // El mensaje vive en UNA constante y la funcion no devuelve nada, asi que
-    // el endpoint no tiene forma de diferenciar los casos. Este test fija que
-    // la constante no se va a separar en dos textos distintos.
+
+
+
     expect(MENSAJE_RESET_GENERICO).toContain('Si esa direccion esta registrada')
   })
 
@@ -210,8 +202,8 @@ describe('solicitarResetDeContrasena', () => {
     await solicitarResetDeContrasena(deps, { email: 'lucia@ejemplo.com' })
     await solicitarResetDeContrasena(deps, { email: 'nadie@ejemplo.com' })
 
-    // Si solo se auditara el caso favorable, el log seria el oraculo que el
-    // endpoint evita darle a quien lo consulta.
+
+
     expect(base.eventos.map((e) => e.tipo)).toContain('reset_solicitado')
     expect(base.eventos.map((e) => e.tipo)).toContain('reset_solicitado_email_inexistente')
   })
@@ -224,8 +216,8 @@ describe('solicitarResetDeContrasena', () => {
     await solicitarResetDeContrasena(deps, { email: 'lucia@ejemplo.com' })
     const segundoToken = base.emails[1].token
 
-    // Sin esto, un atacante que pide un reset antes que el titular conserva un
-    // token valido, y el reset legitimo del usuario no lo invalida.
+
+
     expect(base.filas.size).toBe(1)
     expect(base.filas.has(hashearToken(primerToken))).toBe(false)
     expect(base.filas.has(hashearToken(segundoToken))).toBe(true)
@@ -237,8 +229,8 @@ describe('solicitarResetDeContrasena', () => {
 
     await solicitarResetDeContrasena(deps, { email: 'lucia@ejemplo.com' })
 
-    // Si se permitiera, un admin que dio de baja a alguien lo volveria a
-    // encontrar dentro con la contrasena cambiada.
+
+
     expect(base.emails).toHaveLength(0)
     expect(base.eventos.map((e) => e.tipo)).toContain('reset_solicitado_cuenta_no_activa')
   })
@@ -259,14 +251,14 @@ describe('solicitarResetDeContrasena', () => {
       solicitarResetDeContrasena(depsCaidos, { email: 'lucia@ejemplo.com' }),
     ).rejects.toMatchObject({ statusCode: 500 })
 
-    // Mandar el email sin fila en la base es peor que no mandarlo: el usuario
-    // cree que tiene 15 minutos y en realidad no tiene nada.
+
+
     expect(base.emails).toHaveLength(0)
   })
 })
 
 describe('completarResetDeContrasena', () => {
-  /** Pide un reset y devuelve el token en claro del email. */
+
   async function pedirTokenYDevolverlo(email = 'lucia@ejemplo.com') {
     await crearUsuario(email)
     await solicitarResetDeContrasena(deps, { email })
@@ -283,7 +275,7 @@ describe('completarResetDeContrasena', () => {
     })
 
     expect(resultado.userId).toBe('usr_1')
-    // El hash anterior, no la contrasena en claro.
+
     expect(base.usuarios.get('usr_1')!.passwordHash).not.toBe(hashAntes)
     expect(base.usuarios.get('usr_1')!.passwordHash).toMatch(/^\$argon2/)
   })
@@ -293,8 +285,8 @@ describe('completarResetDeContrasena', () => {
 
     await completarResetDeContrasena(deps, { token, nuevaContrasena: 'NuevaContrasenaSegura123!' })
 
-    // Sin esto el reset no protege nada: el atacante que robo la contrasena la
-    // cambia, ve el aviso por email y sigue dentro con su refresh token.
+
+
     expect(base.refreshRevocados).toEqual([{ userId: 'usr_1', motivo: 'password_reset' }])
   })
 
@@ -310,31 +302,31 @@ describe('completarResetDeContrasena', () => {
     const token = await pedirTokenYDevolverlo()
     await completarResetDeContrasena(deps, { token, nuevaContrasena: 'NuevaContrasenaSegura123!' })
 
-    // El segundo intento con el mismo token, que es lo que pasaria con un
-    // doble click o con un atacante y el titular a la vez.
+
+
     await expect(
       completarResetDeContrasena(deps, { token, nuevaContrasena: 'OtraContrasenaDistinta1!' }),
     ).rejects.toMatchObject({ statusCode: 401 })
   })
 
   it('el canje condicional detecta la carrera aunque decidirCanje diga que vale', async () => {
-    // Este es el test mas importante del archivo.
-    //
-    // Reproduce la ventana de carrera que un `find` seguido de un `update`
-    // separados deja abierta: la fila se lee con used_at NULL, decideCanje la
-    // aprueba, y para cuando se marca como usada OTRO request ya lo hizo.
-    //
-    // Para aislar EXACTAMENTE esa guarda y no la de `ya_usado` (que actua antes
-    // y ya esta cubierta por otro test), el repositorio falso devuelve la fila
-    // como vigente pero hace que `marcarUsado` responda 0, que es lo que hace
-    // la base cuando el UPDATE con WHERE used_at IS NULL no afecta ninguna fila.
+
+
+
+
+
+
+
+
+
+
     const token = await pedirTokenYDevolverlo()
 
     const depsEnCarrera: DependenciasReset = {
       ...deps,
       tokens: {
         ...base.repoTokens,
-        // Simula que otro request gano la carrera justo antes de este.
+
         marcarUsado: async () => 0,
       },
     }
@@ -343,9 +335,9 @@ describe('completarResetDeContrasena', () => {
       completarResetDeContrasena(depsEnCarrera, { token, nuevaContrasena: 'NuevaContrasenaSegura123!' }),
     ).rejects.toMatchObject({ statusCode: 401 })
 
-    // Y lo importante: la contrasena NO se toco. Sin la guarda, los dos
-    // requests cambian la contrasena, el del atacante pone la que quiere, y el
-    // del titular ve un exito que no es cierto.
+
+
+
     expect(base.usuarios.get('usr_1')!.passwordHash).toBe('hash-original')
     expect(base.refreshRevocados).toHaveLength(0)
   })
@@ -362,8 +354,8 @@ describe('completarResetDeContrasena', () => {
       nuevaContrasena: 'NuevaContrasenaSegura123!',
     }).catch(() => undefined)
 
-    // Dos intentos de canjear el mismo token es un evento de seguridad, y con
-    // un motivo propio para poder distinguirlo de un token simplemente viejo.
+
+
     expect(base.eventos.some((e) => e.tipo === 'reset_fallido')).toBe(true)
   })
 
@@ -381,15 +373,15 @@ describe('completarResetDeContrasena', () => {
       }
     }
 
-    // Si distinguieran, un atacante podria usar tokens inventados como oraculo
-    // para descubrir que tokens son reales.
+
+
     expect(mensajes).toHaveLength(2)
     expect(mensajes[0]).toBe(mensajes[1])
   })
 
   it('rechaza un token de verificacion de email', async () => {
-    // El cruce de propositos. Un token de verificacion esta en la misma
-    // bandeja de entrada y es mucho mas facil de conseguir.
+
+
     await crearUsuario()
     base.filas.set('hash-cualquiera', {
       userId: 'usr_1',
@@ -428,8 +420,8 @@ describe('completarResetDeContrasena', () => {
   it('rechaza una contrasena debil con 400 y la lista de problemas', async () => {
     const token = await pedirTokenYDevolverlo()
 
-    // 400, no 401: el token va bien, lo que esta mal es la contrasena. Y con
-    // la lista, porque el usuario tiene que saber que le falta.
+
+
     await expect(
       completarResetDeContrasena(deps, { token, nuevaContrasena: 'corta' }),
     ).rejects.toMatchObject({ statusCode: 400, code: 'validation_error' })
@@ -440,12 +432,12 @@ describe('completarResetDeContrasena', () => {
 
     await completarResetDeContrasena(deps, { token, nuevaContrasena: 'corta' }).catch(() => undefined)
 
-    // Si el fallo de validacion gastara el token, el usuario tendria que
-    // pedir otro email entero por equivocarse al escribir la contrasena nueva.
+
+
     expect([...base.filas.values()][0].usedAt).toBeNull()
 
-    // Y por eso el mismo token sirve en el siguiente intento, ya con una
-    // contrasena valida.
+
+
     await expect(
       completarResetDeContrasena(deps, { token, nuevaContrasena: 'NuevaContrasenaSegura123!' }),
     ).resolves.toMatchObject({ userId: 'usr_1' })
@@ -459,9 +451,9 @@ describe('completarResetDeContrasena', () => {
       completarResetDeContrasena(deps, { token, nuevaContrasena: 'NuevaContrasenaSegura123!' }),
     ).rejects.toMatchObject({ statusCode: 401 })
 
-    // Y el token NO se puede reutilizar si alguien reactiva la cuenta: un
-    // token de reset que sobrevivio a la deshabilitacion es una puerta
-    // abierta.
+
+
+
     expect([...base.filas.values()][0].usedAt).not.toBeNull()
   })
 
@@ -473,9 +465,9 @@ describe('completarResetDeContrasena', () => {
       completarResetDeContrasena(deps, { token, nuevaContrasena: 'NuevaContrasenaSegura123!' }),
     ).rejects.toMatchObject({ statusCode: 401 })
 
-    // El token se canjea igual, para no dejarlo utilizable. No deberia pasar
-    // nunca, porque one_time_tokens tiene ON DELETE CASCADE, pero si llegara
-    // aqui por borrado manual, un token vivo sin usuario es una puerta abierta.
+
+
+
     expect([...base.filas.values()][0].usedAt).not.toBeNull()
   })
 
@@ -487,15 +479,15 @@ describe('completarResetDeContrasena', () => {
 
     expect(serializado).not.toContain('NuevaContrasenaSegura123!')
     expect(serializado).not.toContain(token)
-    // El hash del token tampoco: es un identificador de sesion recuperable.
+
     expect(serializado).not.toContain(hashearToken(token))
   })
 
   it('acepta cualquier contrasena que pase la politica, sin requisitos extra', async () => {
     const token = await pedirTokenYDevolverlo()
-    // La politica es la misma que en el registro. Si el reset aplicara reglas
-    // MAS estrictas, el usuario con una contrasena aceptable en su registro no
-    // podria recuperarla, que es el peor sitio para poner un requisito nuevo.
+
+
+
     const contrasena = 'CambioDeContrasena1!'
     expect(validarContrasena(contrasena).valida).toBe(true)
 

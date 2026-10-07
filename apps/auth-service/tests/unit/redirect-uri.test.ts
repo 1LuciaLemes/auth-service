@@ -1,17 +1,4 @@
-/**
- * Tests de validacion de redirect URIs.
- *
- * Es el archivo de tests mas importante del proyecto, y el criterio para
- * escribirlo no es la cobertura: es "si este modulo tiene un bug, que puede
- * hacer un atacante". Cada caso de ataque real esta aca, junto al caso feliz.
- *
- * Estos tests son codigo puro: no tocan base de datos ni red, asi que corren en
- * milisegundos. Ese es el beneficio de que la validacion viva en un modulo sin
- * dependencias, y es la razon por la que esta escrita asi y no pegada dentro
- * del service de clientes.
- *
- * Ver explicacion.md, seccion 17.
- */
+
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -29,16 +16,16 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('acepta una URL con query string', () => {
-      // Una query fija esta permitida: la app puede codificar un tenant o un
-      // destino en ella, siempre que sea la MISMA que se registro.
+
+
       const resultado = validarFormatoRedirectUri('https://app.example.com/cb?tenant=acme')
 
       expect(resultado.valido).toBe(true)
     })
 
     it('acepta http en localhost, para desarrollo', () => {
-      // Sin esto, nadie podria desarrollar en local, porque la app de
-      // desarrollo corre en http.
+
+
       expect(validarFormatoRedirectUri('http://localhost:5173/callback').valido).toBe(true)
     })
 
@@ -47,12 +34,12 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('acepta http en cualquier 127.x.x.x, que es el rango de loopback', () => {
-      // El rango 127.0.0.0/8 es entero de loopback, no solo 127.0.0.1.
+
       expect(validarFormatoRedirectUri('http://127.0.0.5:8080/callback').valido).toBe(true)
     })
 
     it('acepta http en [::1], que es loopback IPv6', () => {
-      // Las IPs IPv6 van entre corchetes dentro de una URL.
+
       expect(validarFormatoRedirectUri('http://[::1]:3000/callback').valido).toBe(true)
     })
 
@@ -63,8 +50,8 @@ describe('validacion de redirect URIs', () => {
 
   describe('protocolos rechazados', () => {
     it('rechaza javascript:', () => {
-      // Si un redirect URI pudiera ser javascript:, el service mandaria al
-      // navegador a ejecutar codigo del atacante en su propia pagina.
+
+
       const resultado = validarFormatoRedirectUri('javascript:alert(1)')
 
       expect(resultado.valido).toBe(false)
@@ -84,8 +71,8 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('rechaza http en un dominio que no es local', () => {
-      // Aceptar http en general permitiria que el authorization code viaje en
-      // claro, y con eso cualquiera en la red lo podria leer.
+
+
       const resultado = validarFormatoRedirectUri('http://app.example.com/callback')
 
       expect(resultado.valido).toBe(false)
@@ -93,8 +80,8 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('rechaza http en un loopback DISFRAZADO', () => {
-      // El ataque clasico: un dominio que TERMINA en localhost pero es otro
-      // dominio. Con startsWith pasaria el filtro; con igualdad de host, no.
+
+
       const resultado = validarFormatoRedirectUri('http://localhost.evil.example/callback')
 
       expect(resultado.valido).toBe(false)
@@ -104,9 +91,9 @@ describe('validacion de redirect URIs', () => {
 
   describe('inyeccion', () => {
     it('rechaza un salto de linea, que es header injection', () => {
-      // Con \r\n seguido de Set-Cookie se pueden inyectar cabeceras de
-      // respuesta. `new URL()` NO lo detecta: normaliza a %0D%0A y devuelve
-      // una URL que parece valida. Por eso la comprobacion va antes de parsear.
+
+
+
       const resultado = validarFormatoRedirectUri('https://app.com/cb\r\nSet-Cookie: a=b')
 
       expect(resultado.valido).toBe(false)
@@ -114,8 +101,8 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('rechaza un caracter nulo', () => {
-      // El null byte trunca el string en muchos interpretes: lo que llega al
-      // navegador puede ser distinto de lo que llego al service.
+
+
       const resultado = validarFormatoRedirectUri('https://app.com/cb\u0000evil')
 
       expect(resultado.valido).toBe(false)
@@ -128,9 +115,9 @@ describe('validacion de redirect URIs', () => {
 
   describe('forma de la URL', () => {
     it('rechaza una URL relativa', () => {
-      // Relativa no sirve: el navegador la resolveria contra la pagina del
-      // usuario, no contra el service, asi que no hay forma de saber a donde
-      // apunta.
+
+
+
       const resultado = validarFormatoRedirectUri('/callback')
 
       expect(resultado.valido).toBe(false)
@@ -138,8 +125,8 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('rechaza un fragmento, porque nunca se envia al servidor', () => {
-      // Si el authorization code fuera a estar en el fragmento, jamas
-      // llegaria al endpoint de token y el flujo no tendria sentido.
+
+
       const resultado = validarFormatoRedirectUri('https://app.com/cb#token=abc')
 
       expect(resultado.valido).toBe(false)
@@ -147,21 +134,21 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('interpreta https:///callback como host "callback", no como URL sin host', () => {
-      // Este test documenta un comportamiento del parser que contradice lo que
-      // uno espera intuitivamente, y por eso vale la pena dejarlo escrito.
-      //
-      // `https:///callback` tiene TRES barras, asi que parece que no hay host.
-      // Pero el parser de URL de WHATWG no lo interpreta asi: usa el siguiente
-      // segmento como host, y el resultado es `https://callback/`.
-      //
-      // La consecuencia practica es que NO hace falta un chequeo de "host
-      // vacio": para que una URL https llegue con host vacio, el parser tiene
-      // que tirar antes, y eso ya se cubre con 'no_es_url'.
+
+
+
+
+
+
+
+
+
+
       const resultado = validarFormatoRedirectUri('https:///callback')
 
-      // Se acepta, y es correcto: es una URL valida de un solo label. No es
-      // peligroso porque para que sirva tiene que estar REGISTRADA, y el
-      // registro exige coincidencia exacta de cadena.
+
+
+
       expect(resultado.valido).toBe(true)
     })
 
@@ -180,8 +167,8 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('rechaza una URL demasiado larga', () => {
-      // Un limite propio, para no depender de donde corten los navegadores o
-      // los servidores HTTP.
+
+
       const larga = `https://app.com/${'a'.repeat(2100)}`
       const resultado = validarFormatoRedirectUri(larga)
 
@@ -198,8 +185,8 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('rechaza un path con un sufijo', () => {
-      // El ataque del path: si la comparacion fuera con startsWith, el atacante
-      // elegiria cualquier path que empiece con el registrado.
+
+
       expect(redirectUriPermitido('https://app.example.com/callback/extra', registradas)).toBe(false)
     })
 
@@ -214,15 +201,15 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('rechaza una query distinta', () => {
-      // La query es parte de la cadena. Si se ignorara, un atacante podria
-      // redirigir a la misma app con parametros que ella misma controla.
+
+
       expect(redirectUriPermitido('https://app.example.com/callback?x=1', registradas)).toBe(false)
     })
 
     it('rechaza una diferencia de mayusculas en el host', () => {
-      // DNS no distingue mayusculas, pero la COMPARACION DE CADENAS si. Aca se
-      // elige la estrictez: si se normalizara, habria que hacerlo tambien al
-      // registrar, o la lista no estaria verificando lo que dice verificar.
+
+
+
       expect(redirectUriPermitido('https://APP.EXAMPLE.COM/callback', registradas)).toBe(false)
     })
 
@@ -235,8 +222,8 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('rechaza una lista vacia de registradas', () => {
-      // Sin registros, NADA puede estar permitido. Un fallo acá seria un
-      // bypass total del open redirect.
+
+
       expect(redirectUriPermitido('https://app.example.com/callback', [])).toBe(false)
     })
 
@@ -263,14 +250,14 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('rechaza una lista vacia', () => {
-      // Sin ningun URI registrado, el cliente no podria redirigir nunca.
+
       expect(() => validarListaDeRedirectUris([])).toThrow()
     })
 
     it('rechaza mas de 10 URIs', () => {
-      // Limite de diseno: un cliente con 30 URIs casi siempre tiene un
-      // problema de arquitectura, y lo mas probable es que este usando
-      // wildcards por el, que es justamente lo que hay que evitar.
+
+
+
       const muchos = Array.from({ length: 11 }, (_, i) => `https://app.com/cb${i}`)
 
       expect(() => validarListaDeRedirectUris(muchos)).toThrow()
@@ -286,8 +273,8 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('reporta TODOS los URIs invalidos, no solo el primero', () => {
-      // Un developer con 20 URIs quiere ver los 3 que estan mal de una vez.
-      // Si solo apareciera el primero, tendria que registrar y fallar 3 veces.
+
+
       let mensaje = ''
       try {
         validarListaDeRedirectUris([
@@ -305,9 +292,9 @@ describe('validacion de redirect URIs', () => {
     })
 
     it('falla si hay duplicados, en vez de deduplicar en silencio', () => {
-      // Se elige fallar y no deduplicar: un developer que registra 5 URIs y
-      // dos son la misma espera 5 destinos y tiene 4. El error dice cuales
-      // son, que es lo que hace util el mensaje.
+
+
+
       let mensaje = ''
       try {
         validarListaDeRedirectUris(['https://a.com/cb', 'https://b.com/cb', 'https://a.com/cb'])
@@ -316,13 +303,13 @@ describe('validacion de redirect URIs', () => {
       }
 
       expect(mensaje).toContain('duplicados')
-      // El mensaje tiene que decir CUAL se repite, no solo que hay repetidos.
+
       expect(mensaje).toContain('https://a.com/cb')
     })
 
     it('devuelve los URIs validos en el mismo orden en que se recibieron', () => {
-      // El orden se preserva porque el cliente ve la lista en su configuracion
-      // y un reordenamiento inexplicable confunde al debuggear.
+
+
       const resultado = validarListaDeRedirectUris([
         'https://z.com/cb',
         'https://a.com/cb',

@@ -1,18 +1,4 @@
-/**
- * Tests del servicio de autenticacion, con repositorios falsos.
- *
- * Estos tests NO tocan Postgres: el repositorio es un objeto en memoria que
- * responde lo que cada test necesita. Es lo que compra el patron de puertos, y
- * es la razon por la que las reglas de seguridad del login se pueden testear
- * sin tener Docker andado.
- *
- * El foco esta en lo que un test de "login funciona" no reveal: que el error
- * sea el mismo para todos los fallos, que el tiempo sea el mismo, que el
- * contador de fallos se actualice, y que un email sin verificar no alcance
- * para lo importante.
- *
- * Ver explicacion.md, secciones 19, 22 y 23.
- */
+
 
 import { beforeEach, describe, expect, it } from 'vitest'
 import { AppError, MENSAJE_CREDENCIALES_INVALIDAS } from '../../src/lib/errors.js'
@@ -38,18 +24,9 @@ const POLITICA = { maxIntentos: 5, minutosDeBloqueo: 15 }
 
 const CONTRASENA_VALIDA = 'UnaContrasenaLarga1!'
 
-/**
- * Estado de la base falsa, para que cada test pueda inspeccionarlo.
- *
- * OJO con `datos.usuarios` y el repositorio `usuarios`: son dos cosas
- * distintas. El primero es el Map con las filas, y el segundo es el objeto que
- * cumple el puerto. La primera version de este helper devolvia un objeto con
- * spread y paba el Map por encima con el repositorio, asi que el Map quedaba
- * inaccesible y todos los tests que lo inspeccionaban fallaban con
- * "expected undefined to be 0".
- */
+
 interface BaseFalsa {
-  /** Las filas, para poder inspeccionar y sembrar datos. */
+
   filas: Map<string, UsuarioFalso>
   eventos: Array<{ tipo: string; userId?: string }>
 }
@@ -61,11 +38,11 @@ interface UsuarioFalso {
   emailVerifiedAt: Date | null
   role: 'user' | 'admin'
   estado: EstadoBloqueo
-  /** Estado de la cuenta. Distinto de `estado`, que es el bloqueo temporal. */
+
   status: EstadoCuenta
 }
 
-/** Implementa el puerto de usuarios en memoria. */
+
 function crearBaseFalsa(): BaseFalsa & {
   usuarios: RepositorioUsuarios
   auditoria: RepositorioAuditoria
@@ -85,10 +62,10 @@ function crearBaseFalsa(): BaseFalsa & {
         emailVerifiedAt: usuario.emailVerifiedAt,
         role: usuario.role,
         estado: { ...usuario.estado },
-        // Sin esto el repositorio devuelve `undefined` y el login rechaza
-        // ANTES de verificar la contrasena, que es como cinco tests de
-        // bloqueo dejaron de registrar intentos sin que el error Dijera nada
-        // util: el mensaje era el generico de siempre.
+
+
+
+
         status: usuario.status,
       }
     },
@@ -147,10 +124,10 @@ function crearBaseFalsa(): BaseFalsa & {
 
   const auditoria: RepositorioAuditoria = {
     async registrar(evento) {
-      // Se copia el evento entero, metadata incluida. Antes solo se guardaban
-      // tipo y userId, y por eso los tests que comprueban que un dato sensible
-      // va al audit log y NO al cliente fallaban con undefined sin que el
-      // servicio tuviera nada que ver: el fake se comia el campo.
+
+
+
+
       datos.eventos.push({ ...evento })
     },
   }
@@ -158,7 +135,7 @@ function crearBaseFalsa(): BaseFalsa & {
   return { ...datos, usuarios, auditoria }
 }
 
-/** Agrega un usuario directo a la base falsa, saltandose el registro. */
+
 function agregarUsuario(
   base: BaseFalsa,
   email: string,
@@ -211,15 +188,15 @@ describe('servicio de autenticacion', () => {
 
       expect(resultado.userId).toBeDefined()
       expect(emailsEnviados).toHaveLength(1)
-      // El email se normaliza a minusculas ANTES de guardar, para que
-      // Nueva@Ejemplo.com y nueva@ejemplo.com no sean dos cuentas.
+
+
       expect(emailsEnviados[0].email).toBe('nueva@ejemplo.com')
     })
 
     it('rechaza una contrasena debil ANTES de hashear', async () => {
-      // La politica va antes del hash a proposito: argon2 cuesta ~100 ms y
-      // 19 MB, y rechazar despues desperdicia justo el recurso que frena la
-      // fuerza bruta.
+
+
+
       await expect(
         registrarUsuario(deps, { email: 'a@b.com', contrasena: '123' }),
       ).rejects.toThrow(AppError)
@@ -239,8 +216,8 @@ describe('servicio de autenticacion', () => {
       expect(error).toBeInstanceOf(AppError)
       if (error instanceof AppError) {
         expect(error.statusCode).toBe(400)
-        // El mensaje tiene que ser accionable: el usuario necesita saber que
-        // le falta, si no esta probando contrasenas al azar.
+
+
         expect(JSON.stringify(error.metadata)).toContain('al menos')
       }
     })
@@ -248,9 +225,9 @@ describe('servicio de autenticacion', () => {
     it('rechaza un email duplicado con 409', async () => {
       await registrarUsuario(deps, { email: 'dup@ejemplo.com', contrasena: CONTRASENA_VALIDA })
 
-      // El 409 es una decision de diseno, no un descuido: el patron de
-      // "exito generico" rompe la usabilidad sin evitar el ataque, porque
-      // igual hay que avisarle al usuario que casi seguro ya existe.
+
+
+
       await expect(
         registrarUsuario(deps, { email: 'dup@ejemplo.com', contrasena: CONTRASENA_VALIDA }),
       ).rejects.toThrow(/Ya existe una cuenta/)
@@ -265,8 +242,8 @@ describe('servicio de autenticacion', () => {
     })
 
     it('deja el usuario con el email SIN verificar', async () => {
-      // Un email sin verificar es un campo de texto, nada mas. Nunca se usa
-      // para decidir con quien se vincula una cuenta.
+
+
       await registrarUsuario(deps, { email: 'nuevo@ejemplo.com', contrasena: CONTRASENA_VALIDA })
 
       const usuario = base.filas.get('nuevo@ejemplo.com')
@@ -305,7 +282,7 @@ describe('servicio de autenticacion', () => {
         }
       }
 
-      // Si estos dos difieren, el endpoint es un enumerador de cuentas.
+
       expect(mensajeInexistente).toBe(mensajeIncorrecta)
       expect(codigoInexistente).toBe(codigoIncorrecta)
     })
@@ -330,17 +307,17 @@ describe('servicio de autenticacion', () => {
         }
       }
 
-      // Decir "tu cuenta esta bloqueada" confirma que el email existe. Y
-      // ademas sirve de reloj para el atacante: sabe que se acerco.
+
+
       expect(mensaje).toBe('Credenciales invalidas.')
       expect(codigo).toBe(401)
     })
 
     it('el mismo error para un usuario que solo se registro con Google', async () => {
-      // Un usuario de Google no tiene passwordHash. Si el codigo pasara
-      // `null` al verificador, el usuario recibiria un error de contrasena
-      // incorrecta en vez de "entra con Google", que lo manda a una pagina
-      // donde no puede hacer nada.
+
+
+
+
       agregarUsuario(base, 'google@ejemplo.com', null)
 
       await expect(
@@ -349,8 +326,8 @@ describe('servicio de autenticacion', () => {
     })
 
     it('NO escribe el email en el audit log', async () => {
-      // El audit log lo lee gente con menos permiso que la base, y un email es
-      // un dato personal. Solo se guarda el motivo.
+
+
       agregarUsuario(base, 'existe@ejemplo.com', 'hash-cualquiera')
 
       try {
@@ -360,7 +337,7 @@ describe('servicio de autenticacion', () => {
           AHORA,
         )
       } catch {
-        // se espera el error
+
       }
 
       const serializado = JSON.stringify(base.eventos)
@@ -369,18 +346,18 @@ describe('servicio de autenticacion', () => {
   })
 
   describe('login: una cuenta dada de baja no entra', () => {
-    // El schema declara 'disabled' desde el principio, pero el login no lo
-    // miraba. Con el bloqueo por intentos vencido (que se resuelve solo al pasar
-    // la hora), una cuenta dada de baja podia iniciar sesion con normalidad.
-    //
-    // Todos los tests de este bloque usan un hash REAL, no 'hash-cualquiera'.
-    // La comprobacion de status va DESPUES de verificar la contrasena, y
-    // verificar un hash falso falla siempre: con un hash de mentira estos tests
-    // se pasarian probando el camino de contrasena incorrecta, y el de 'cuenta
-    // activa entra' fallaria sin que hubiera relacion con lo que prueba.
+
+
+
+
+
+
+
+
+
     const CONTRASENA_REAL = 'ContrasenaBuena1!'
 
-    /** Agrega un usuario con un hash argon2 de verdad para CONTRASENA_REAL. */
+
     async function agregarUsuarioConHashReal(
       email: string,
       status: EstadoCuenta,
@@ -408,18 +385,18 @@ describe('servicio de autenticacion', () => {
         mensaje = (error as Error).message
       }
 
-      // Decirlo confirmaria que el email existe Y que esta dado de baja, que
-      // es mas informacion que un simple "credenciales invalidas".
+
+
       expect(mensaje).toBe(MENSAJE_CREDENCIALES_INVALIDAS)
     })
 
     it('una contrasena CORRECTA tampoco deja entrar a una cuenta dada de baja', async () => {
       await agregarUsuarioConHashReal('u@ejemplo.com', 'disabled')
 
-      // Este es el caso que importa. Que la contrasena sea correcta no puede
-      // saltarse una baja: si el status solo se comprobara en el camino del
-      // fallo, bastaria con conocer la contrasena de una cuenta deshabilitada
-      // para entrar.
+
+
+
+
       await expect(
         iniciarSesion(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_REAL }, AHORA),
       ).rejects.toMatchObject({ statusCode: 401 })
@@ -434,13 +411,13 @@ describe('servicio de autenticacion', () => {
 
       const evento = base.eventos.find((e) => e.tipo === 'login_cuenta_no_activa')
       expect(evento).toBeDefined()
-      // El status es informacion de gestion, y va al log. Nunca al cliente.
+
       expect(evento?.metadata?.status).toBe('disabled')
     })
 
     it('una cuenta activa normal entra sin problema', async () => {
-      // El caso contrario, para que los tests anteriores no se puedan hacer
-      // pasar rechazando siempre.
+
+
       await agregarUsuarioConHashReal('u@ejemplo.com', 'active')
 
       await expect(
@@ -457,7 +434,7 @@ describe('servicio de autenticacion', () => {
         try {
           await iniciarSesion(deps, { email: 'u@ejemplo.com', contrasena: 'Incorrecta1!' }, AHORA)
         } catch {
-          // se espera el error
+
         }
       }
 
@@ -465,13 +442,13 @@ describe('servicio de autenticacion', () => {
     })
 
     it('NO incrementa los intentos si el email no existe', async () => {
-      // Si el contador subiera tambien para emails inexistentes, el atacante
-      // no ganaria nada, pero el usuario tampoco. Y el registro en la base no
-      // tendria sentido para un id que no existe.
+
+
+
       try {
         await iniciarSesion(deps, { email: 'nadie@ejemplo.com', contrasena: 'x' }, AHORA)
       } catch {
-        // se espera el error
+
       }
 
       expect(base.filas.size).toBe(0)
@@ -484,7 +461,7 @@ describe('servicio de autenticacion', () => {
         try {
           await iniciarSesion(deps, { email: 'u@ejemplo.com', contrasena: 'Incorrecta1!' }, AHORA)
         } catch {
-          // se espera el error
+
         }
       }
 
@@ -493,9 +470,9 @@ describe('servicio de autenticacion', () => {
     })
 
     it('resetea el contador con un login exitoso', async () => {
-      // Con un hash de mentira, argon2 da false siempre, asi que "exitoso"
-      // no se puede simular por esta via. Se comprueba el reset directamente
-      // sobre el repositorio, que es donde vive la regla.
+
+
+
       const usuario = agregarUsuario(base, 'u@ejemplo.com', 'hash-cualquiera', {
         estado: { intentosFallidos: 3, bloqueadaHasta: null },
       })
@@ -507,9 +484,9 @@ describe('servicio de autenticacion', () => {
     })
 
     it('el mensaje avisa cuando quedan pocos intentos', async () => {
-      // Con 3 fallos previos, este es el cuarto intento y deja 1 restante: el
-      // mensaje util para el usuario, que todavia puede usar "olvide mi
-      // contrasena" antes de quedar afuera.
+
+
+
       const usuario = agregarUsuario(base, 'u@ejemplo.com', 'hash-cualquiera', {
         estado: { intentosFallidos: 3, bloqueadaHasta: null },
       })
@@ -526,9 +503,9 @@ describe('servicio de autenticacion', () => {
     })
 
     it('NO anuncia un intento que ya no existe, porque la cuenta se acaba de bloquear', async () => {
-      // Con 4 fallos previos, este quinto intento DISPARA el bloqueo. Decir
-      // "queda 1 intento" seria una mentira: la cuenta ya esta bloqueada, y
-      // ademas el mensaje revelaria que la cuenta existe.
+
+
+
       const usuario = agregarUsuario(base, 'u@ejemplo.com', 'hash-cualquiera', {
         estado: { intentosFallidos: 4, bloqueadaHasta: null },
       })
@@ -556,21 +533,21 @@ describe('servicio de autenticacion', () => {
     })
 
     it('verificar dos veces no es un error', async () => {
-      // El usuario puede hacer clic dos veces o abrir el link en dos
-      // pestanas. Tratarlo como exito es lo correcto; un 409 haria que la
-      // segunda pestana mostrara un error confuso.
+
+
+
       const usuario = agregarUsuario(base, 'u@ejemplo.com', 'hash')
 
       await verificarEmail(deps, usuario.id, AHORA)
       await verificarEmail(deps, usuario.id, new Date('2026-09-29T13:00:00.000Z'))
 
-      // La fecha no cambia: la primera verificacion es la que vale.
+
       expect(base.filas.get('u@ejemplo.com')?.emailVerifiedAt).toEqual(AHORA)
     })
 
     it('falla si el token apunta a un usuario que ya no existe', async () => {
-      // Es un 500 disfrazado de 404: el token era valido cuando se genero, y
-      // el usuario se borro despues. No es culpa de quien hace clic.
+
+
       await expect(verificarEmail(deps, 'usr_inexistente', AHORA)).rejects.toThrow(AppError)
     })
   })
@@ -584,8 +561,8 @@ describe('servicio de autenticacion', () => {
 
       const vista = estadoDeBloqueoParaElCliente(estado, AHORA)
 
-      // Proteger el contrato: un endpoint futuro no deberia poder exponer el
-      // lockedUntil en crudo y que otro lo interprete al reves.
+
+
       expect(vista).toEqual({ bloqueado: true, minutosRestantes: 14 })
       expect(vista).not.toHaveProperty('bloqueadaHasta')
     })
@@ -616,9 +593,9 @@ describe('servicio de autenticacion', () => {
     })
 
     it('distingue los tipos de fallo, para poder alertar sobre uno solo', async () => {
-      // "login_fallido" a thousand veces puede ser un usuario que se confunde
-      // de teclado. "login_fallido_usuario_inexistente" es un bot. Con un solo
-      // tipo de evento no se puede construir una alerta util.
+
+
+
       agregarUsuario(base, 'existe@ejemplo.com', 'hash-cualquiera')
 
       await iniciarSesion(deps, { email: 'nadie@ejemplo.com', contrasena: 'x' }, AHORA).catch(
@@ -636,8 +613,8 @@ describe('servicio de autenticacion', () => {
     })
 
     it('el registro duplicado queda auditado', async () => {
-      // Un intento de registro con un email existente es un evento de
-      // seguridad: puede ser alguien que esta armando una lista de cuentas.
+
+
       await registrarUsuario(deps, { email: 'dup@ejemplo.com', contrasena: CONTRASENA_VALIDA })
 
       await registrarUsuario(deps, { email: 'dup@ejemplo.com', contrasena: CONTRASENA_VALIDA }).catch(
@@ -661,49 +638,49 @@ describe('servicio de autenticacion', () => {
   })
 
   describe('el token de verificacion: la base y el email reciben cosas distintas', () => {
-    // Este bloque, antes, afirmaba que lo que se mandaba al email era el
-    // HASH, y el test pasaba. Documentaba el bug en vez de detectarlo: con el
-    // hash en el enlace, el usuario lo abre, el endpoint hashea lo que recibe y
-    // busca en la base, donde esta el hash DEL HASH. Nunca coincide, y el
-    // enlace no verifica nada.
-    //
-    // El fallo era invisible porque el registro devolvia 201 y el email salia
-    // con normalidad. Nadie se enteraba hasta que alguien reportaba que su
-    // enlace de verificacion no funciona.
+
+
+
+
+
+
+
+
+
     it('manda al email el token EN CLARO, no el hash', async () => {
       await registrarUsuario(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA })
 
-      // Es lo unico que sirve: es lo que el usuario va a usar para verificar.
+
       expect(emailsEnviados[0].token).toBe('token-en-claro-que-va-al-email')
     })
 
     it('el hash NUNCA sale en el email', async () => {
       await registrarUsuario(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA })
 
-      // La otra mitad de la regla: a la base va el hash, y el hash no viaja.
-      // Un enlace de verificacion es publico en cuanto se reenvia o se lee en
-      // un movil compartido.
+
+
+
       expect(emailsEnviados[0].token).not.toBe('hash-de-token-falso')
     })
 
     it('el token del email no es derivable del hash que se guarda', async () => {
       await registrarUsuario(deps, { email: 'u@ejemplo.com', contrasena: CONTRASENA_VALIDA })
 
-      // Las dos mitades tienen que ser realmente distintas y no calcularse una
-      // de la otra de forma reversible.
+
+
       expect(emailsEnviados[0].token).not.toContain('hash-de-token-falso')
     })
   })
 
   describe('carrera de dos registros con el mismo email', () => {
     it('devuelve 409, no 500, cuando el UNIQUE revienta en el INSERT', async () => {
-      // Los dos registros pasan el buscarPorEmail antes de que ninguno inserte.
-      // El UNIQUE de la base rechaza al segundo, y eso es un 409, no un fallo
-      // del servidor.
-      //
-      // Con el codigo anterior, cualquier error del crear se traducía a 500.
-      // El usuario reintentaba tres veces, recibia 500 las tres, y la cuenta se
-      // quedaba a medias sin ninguna pista de por que.
+
+
+
+
+
+
+
       const depsEnConflicto: DependenciasAuth = {
         ...deps,
         usuarios: {
@@ -738,17 +715,17 @@ describe('servicio de autenticacion', () => {
         () => undefined,
       )
 
-      // El evento importa: un intento duplicado es informacion de seguridad
-      // (puede ser alguien registrando cuentas ajenas), mientras que un 500 es
-      // ruido de infraestructura.
+
+
+
       expect(base.eventos.some((e) => e.tipo === 'registro_rechazado_email_duplicado')).toBe(true)
     })
 
     it('un fallo que NO es de unicidad sigue siendo 500', async () => {
-      // El riesgo de afinar la deteccion es tragarse errores de verdad. Un corte
-      // de red o la base caida tienen que seguir siendo 500, porque un 409
-      // diria al usuario que su email ya esta en uso, que es un diagnostico
-      // falso y lo dejaria probando contrasenas al azar.
+
+
+
+
       const depsCaido: DependenciasAuth = {
         ...deps,
         usuarios: {
@@ -765,7 +742,7 @@ describe('servicio de autenticacion', () => {
     })
 
     it('detecta el conflicto por el nombre de la constraint si no hay code', async () => {
-      // Alguns adaptadores (y algunos mocks) solo exponen `constraint`.
+
       const depsSinCode: DependenciasAuth = {
         ...deps,
         usuarios: {

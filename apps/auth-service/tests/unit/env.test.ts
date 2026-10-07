@@ -1,18 +1,9 @@
-/**
- * Tests del validador de entorno.
- *
- * Aqui se importa env.schema.ts, NO env.ts, a proposito: el schema es codigo
- * puro y se puede testear sin tocar process.env. Si se importara env.ts, cada
- * test tendria que preparar todas las variables del sistema, y uno solo que
- * olvidara una fallaria por falta de configuracion y no por un bug real.
- *
- * Ver explicacion.md, seccion 31.
- */
+
 
 import { describe, expect, it } from 'vitest'
 import { EnvSchema } from '../../src/config/env.schema.js'
 
-/** Configuracion minima valida. Cada test parte de aca y cambia lo que prueba. */
+
 const base = {
   DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/auth_service',
   JWT_PRIVATE_KEY: 'PRIVADA',
@@ -95,9 +86,9 @@ describe('EnvSchema', () => {
 
   describe('validacion cruzada de rate limit', () => {
     it('rechaza upstash sin credenciales', () => {
-      // Este es el caso que justifica superRefine: sin esto, un deploy con
-      // upstash y sin credenciales arrancaria bien y el rate limit estaria
-      // desactivado hasta que alguien lo notara.
+
+
+
       const resultado = EnvSchema.safeParse({ ...base, RATE_LIMIT_STORE: 'upstash' })
       expect(resultado.success).toBe(false)
     })

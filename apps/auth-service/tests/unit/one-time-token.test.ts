@@ -1,12 +1,4 @@
-/**
- * Tests de one-time tokens.
- *
- * Este modulo es donde se decide si alguien puede entrar en una cuenta o
- * cambiar su contrasena, asi que los tests cubren los casos de ATAQUE y no solo
- * el camino feliz.
- *
- * Ver explicacion.md, secciones 32 y 36.
- */
+
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -20,7 +12,7 @@ import {
 
 const AHORA = new Date('2030-01-01T12:00:00.000Z')
 
-/** Construye una fila valida de one_time_tokens. */
+
 function fila(overrides: Partial<TokenAlmacenado> = {}): TokenAlmacenado {
   return {
     userId: 'usr_1',
@@ -37,8 +29,8 @@ describe('one-time tokens', () => {
     it('devuelve el token en claro y su hash, y son distintos', () => {
       const emitido = generarTokenDeUnSoloUso('password_reset', AHORA)
 
-      // Esta es la pareja de la que depende todo el modulo: el token viaja
-      // por el email, el hash se queda en la base.
+
+
       expect(emitido.token).not.toBe(emitido.tokenHash)
       expect(emitido.token).toMatch(/^[A-Za-z0-9_-]{43}$/)
     })
@@ -46,25 +38,25 @@ describe('one-time tokens', () => {
     it('el hash es SHA-256 del token, y se puede recalcular', () => {
       const emitido = generarTokenDeUnSoloUso('email_verification', AHORA)
 
-      // Si el hash no fuera determinista, la fila guardada nunca coincidiria
-      // con el token que llega por email y el canje fallaria siempre.
+
+
       expect(emitido.tokenHash).toBe(hashearToken(emitido.token))
-      // SHA-256 son 32 bytes. En base64url son 43 caracteres, y en hexadecimal
-      // 64. Este test afirmaba 64, que es la codificacion que NO usa el
-      // proyecto: la de crypto.ts es base64url, porque es la que se puede
-      // meter en una URL y en un header sin tener que escapar caracteres.
-      // El fallo no rompia nada, porque el hash es opaco y su formato no
-      // importa, pero un test que afirma algo falso sobre la propia
-      // implementacion es la forma de que la afirmacion se copie a otro sitio
-      // y ahi sí sea un bug.
+
+
+
+
+
+
+
+
       expect(emitido.tokenHash).toHaveLength(43)
     })
 
     it('el hash NO permite recuperar el token', () => {
       const emitido = generarTokenDeUnSoloUso('password_reset', AHORA)
 
-      // Un hash de una sola via no se puede invertir. Por eso guardar el hash
-      // es seguro: tener la fila de la base no sirve para hacer un reset.
+
+
       expect(emitido.tokenHash).not.toContain(emitido.token)
       expect(emitido.token).not.toContain(emitido.tokenHash.slice(0, 16))
     })
@@ -72,9 +64,9 @@ describe('one-time tokens', () => {
     it('dos tokens nunca coinciden', () => {
       const generados = new Set<string>()
 
-      // Si dos usuarios Compartieran token, el segundo podria canjear el del
-      // primero. Y si compartieran hash, al canjear uno se invalidarian los
-      // dos.
+
+
+
       for (let i = 0; i < 500; i += 1) {
         generados.add(generarTokenDeUnSoloUso('password_reset', AHORA).token)
       }
@@ -83,7 +75,7 @@ describe('one-time tokens', () => {
     })
 
     it('el reset expira mucho antes que la verificacion de email', () => {
-      // Es a proposito. Un token de reset es el mas sensible de los dos.
+
       expect(ttlDeProposito('password_reset')).toBe(900)
       expect(ttlDeProposito('email_verification')).toBe(86_400)
     })
@@ -109,10 +101,10 @@ describe('one-time tokens', () => {
     })
 
     it('rechaza longitudes distintas sin lanzar', () => {
-      // `timingSafeEqual` lanza si los buffers tienen tamanos distintos, y un
-      // error inesperado en la validacion de un token es una vulnerabilidad:
-      // el endpoint responderia 500 y revelaria que el token "existe pero es
-      // raro", en vez de 401 generico.
+
+
+
+
       expect(compararEnTiempoConstante('corto', 'mucho_mas_largo_de_todo')).toBe(false)
       expect(compararEnTiempoConstante('', 'algo')).toBe(false)
     })
@@ -126,8 +118,8 @@ describe('one-time tokens', () => {
     })
 
     it('acepta un token que vence dentro de un segundo', () => {
-      // El limite es `expiresAt > ahora`, no `>=`. A las 12:00:00.000 con
-      // expiracion a las 12:00:00.001 el token sigue valiendo.
+
+
       const resultado = decidirCanje(
         fila({ expiresAt: new Date(AHORA.getTime() + 1) }),
         'password_reset',
@@ -163,8 +155,8 @@ describe('one-time tokens', () => {
         AHORA,
       )
 
-      // Este es EL test de un solo uso. Si pasara, un token robado del email
-      // serviria para siempre, no solo hasta que el usuario lo usara.
+
+
       expect(resultado).toEqual({ ok: false, motivo: 'ya_usado' })
     })
 
@@ -179,9 +171,9 @@ describe('one-time tokens', () => {
     })
 
     it('rechaza un token que vence JUSTO ahora', () => {
-      // El instante exacto de expiracion ya no vale. Es `now` al segundo
-      // exacto, y tratarlo como vigente abriria una ventana de expiracion
-      // inutilizable.
+
+
+
       const resultado = decidirCanje(
         fila({ expiresAt: new Date(AHORA.getTime()) }),
         'password_reset',
@@ -192,9 +184,9 @@ describe('one-time tokens', () => {
     })
 
     it('NO deja usar un token de reset para verificar un email', () => {
-      // Este es el cruce de propositos. Si pasara, cualquiera con acceso al
-      // endpoint de verificacion podria "confirmar" un email con un token de
-      // reset robado, sin llegar a tener el buzon.
+
+
+
       const resultado = decidirCanje(
         fila({ purpose: 'password_reset' }),
         'email_verification',
@@ -205,10 +197,10 @@ describe('one-time tokens', () => {
     })
 
     it('NO deja usar un token de verificacion para cambiar la contrasena', () => {
-      // El caso inverso, y mas grave: un token de verificacion suele estar en
-      // la misma bandeja de entrada que el de reset, es mas facil de obtener
-      // y sirve para algo que el usuario no espera. Si aceptara, basta con
-      // pedir la verificacion y usar ese token para fijar una contrasena.
+
+
+
+
       const resultado = decidirCanje(
         fila({ purpose: 'email_verification' }),
         'password_reset',
@@ -219,16 +211,16 @@ describe('one-time tokens', () => {
     })
 
     it('rechaza un purpose desconocido en la fila', () => {
-      // purpose es texto libre en la base, no un enum. Si alguien inserta
-      // 'admin' a mano, el servicio no debe asumir que es valido.
+
+
       const resultado = decidirCanje(fila({ purpose: 'admin' }), 'password_reset', AHORA)
 
       expect(resultado).toEqual({ ok: false, motivo: 'proposito_distinto' })
     })
 
     it('da el mismo motivo para un token vacio y uno inexistente', () => {
-      // Un atacante que pruebe tokens al azar no debe poder distinguir "no
-      // existe" de "existe pero no sirve". En los dos casos: no_existe.
+
+
       const vacio = decidirCanje(null, 'password_reset', AHORA)
 
       expect(vacio).toEqual({ ok: false, motivo: 'no_existe' })
@@ -237,14 +229,14 @@ describe('one-time tokens', () => {
 
   describe('orden de las comprobaciones', () => {
     it('gana la comprobacion de "ya usado" sobre la de proposito y la de expiracion', () => {
-      // Este test fija el ORDEN de las comprobaciones, que es:
-      // no_existe -> ya_usado -> expirado -> proposito_distinto.
-      //
-      // Aqui la fila esta a la vez ya usada, expirada y con purpose equivocado,
-      // y el resultado es "ya_usado". Importa porque el motivo va al audit log
-      // y porque el usuario que reintenta un token de reset viejo tiene que
-      // recibir un motivo que le sirva: si dijera "proposito_distinto" le
-      // haria sospechar de un fallo del sistema.
+
+
+
+
+
+
+
+
       const resultado = decidirCanje(
         fila({
           purpose: 'email_verification',
@@ -259,8 +251,8 @@ describe('one-time tokens', () => {
     })
 
     it('gana la expiracion sobre la de proposito', () => {
-      // Y cuando no esta usada pero si expirada y con purpose equivocado, el
-      // motivo es "expirado", no "proposito_distinto".
+
+
       const resultado = decidirCanje(
         fila({
           purpose: 'email_verification',
