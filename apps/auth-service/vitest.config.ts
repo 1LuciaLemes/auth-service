@@ -26,9 +26,9 @@ export default defineConfig({
 
 
       JWT_PRIVATE_KEY:
-        '-----BEGIN EC PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg\n-----END EC PRIVATE KEY-----',
+        '-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg4/0epaA05vOgQyt/\nN45SVThUbMBGxpl7oT9EvPrnv/mhRANCAARrfR4/IEX6msEi35XwYA/9odVm/Epc\nSWmdTjEeM/2og5tru6ozumOgy9esvaaqlzLxaJrevAd9VX6ULTRiUSGd\n-----END PRIVATE KEY-----',
       JWT_PUBLIC_KEY:
-        '-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\n-----END PUBLIC KEY-----',
+        '-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEa30ePyBF+prBIt+V8GAP/aHVZvxK\nXElpnU4xHjP9qIOba7uqM7pjoMvXrL2mqpcy8Wia3rwHfVV+lC00YlEhnQ==\n-----END PUBLIC KEY-----',
 
       ALLOWED_ORIGINS: 'http://localhost:5173,https://app.example.com',
 
